@@ -1,6 +1,7 @@
 package stores
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aimrintech/x-backend/models"
@@ -16,11 +17,13 @@ type TweetStore interface {
 
 type tweetStore struct {
 	driver *neo4j.DriverWithContext
+	dbCtx *context.Context
 }
 
-func NewTweetStore(driver *neo4j.DriverWithContext) TweetStore {
+func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context) TweetStore {
 	return &tweetStore{
 		driver: driver,
+		dbCtx: dbCtx,
 	}
 }
 

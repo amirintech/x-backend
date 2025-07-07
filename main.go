@@ -11,17 +11,20 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-func main() {
+func init() {
 	// Load environment variables
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
+		panic(err)
 	}
+}
 
+func main() {
 	// Database connection
 	dbCtx := context.Background()
 	neo4jUri := os.Getenv("NEO4J_URI")
-	neo4jUser := os.Getenv("NEO4J_USER")
+	neo4jUser := os.Getenv("NEO4J_USERNAME")
 	neo4jPassword := os.Getenv("NEO4J_PASSWORD")
 
 	driver, err := neo4j.NewDriverWithContext(neo4jUri, neo4j.BasicAuth(neo4jUser, neo4jPassword, ""))
@@ -38,6 +41,7 @@ func main() {
 	fmt.Println("Connection established.")
 
 	// Init server
-	server := api.NewServer(&driver)
+	server := api.NewServer(&driver, &dbCtx)
+	fmt.Println("Server listening on port 8080")
 	server.Start(":8080")
 }

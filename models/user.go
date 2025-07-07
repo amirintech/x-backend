@@ -5,6 +5,7 @@ import "time"
 type User struct {
 	ID        string `json:"id" neo4j:"id"`
 	Username  string `json:"username" neo4j:"username"`
+	Name      string `json:"name" neo4j:"name"`
 	Email     string `json:"email" neo4j:"email"`
 	Password  string `json:"password" neo4j:"password"`
 	CreatedAt time.Time `json:"createdAt" neo4j:"createdAt"`
@@ -21,3 +22,4 @@ type User struct {
 	TweetsCount int `json:"tweetsCount" neo4j:"tweetsCount"`
 	IsLocked bool `json:"isLocked" neo4j:"isLocked"`
 }
+
