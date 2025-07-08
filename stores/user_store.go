@@ -10,7 +10,7 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-type UserStore interface { 
+type UserStore interface {
 	GetUserByID(id string) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
 	CreateUser(user *models.User) (*models.User, error)
@@ -24,13 +24,13 @@ type UserStore interface {
 
 type userStore struct {
 	driver *neo4j.DriverWithContext
-	dbCtx *context.Context
+	dbCtx  *context.Context
 }
 
 func NewUserStore(driver *neo4j.DriverWithContext, dbCtx *context.Context) UserStore {
 	return &userStore{
 		driver: driver,
-		dbCtx: dbCtx,
+		dbCtx:  dbCtx,
 	}
 }
 
@@ -207,7 +207,7 @@ func (s *userStore) DeleteUser(id string) error {
 		`MATCH (u:User {id: $id}) DETACH DELETE u`,
 		map[string]any{"id": id},
 		neo4j.EagerResultTransformer,
-	)		
+	)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (s *userStore) GetFollowing(userID string, limit int, offset int) ([]*model
 		`MATCH (u:User {id: $userID})-[:FOLLOWS]->(f:User) LIMIT $limit OFFSET $offset RETURN f`,
 		map[string]any{"userID": userID, "limit": limit, "offset": offset},
 		neo4j.EagerResultTransformer,
-	)	
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -295,44 +295,44 @@ func (s *userStore) GetFollowing(userID string, limit int, offset int) ([]*model
 	return users, nil
 }
 
-func extractUserFromNode(userNode any) (*models.User) {
+func extractUserFromNode(userNode any) *models.User {
 	props := userNode.(neo4j.Node).Props
 
 	return &models.User{
-		ID: props["id"].(string),
-		Name: props["name"].(string),
-		Email: props["email"].(string),
-		Password: props["password"].(string),
-		Username: props["username"].(string),
+		ID:             props["id"].(string),
+		Name:           props["name"].(string),
+		Email:          props["email"].(string),
+		Password:       props["password"].(string),
+		Username:       props["username"].(string),
 		ProfilePicture: toStringPtr(props["profilePicture"]),
-		BannerPicture: toStringPtr(props["bannerPicture"]),
-		IsVerified: props["isVerified"].(bool),
+		BannerPicture:  toStringPtr(props["bannerPicture"]),
+		IsVerified:     props["isVerified"].(bool),
 		FollowersCount: int(props["followersCount"].(int64)),
 		FollowingCount: int(props["followingCount"].(int64)),
-		TweetsCount: int(props["tweetsCount"].(int64)),
-		IsLocked: props["isLocked"].(bool),
-		Bio: toStringPtr(props["bio"]),
-		Location: toStringPtr(props["location"]),
-		Website: toStringPtr(props["website"]),
-		Birthday: toTimePtr(props["birthday"]),
-		CreatedAt: props["createdAt"].(time.Time),
-		UpdatedAt: props["updatedAt"].(time.Time),
+		TweetsCount:    int(props["tweetsCount"].(int64)),
+		IsLocked:       props["isLocked"].(bool),
+		Bio:            toStringPtr(props["bio"]),
+		Location:       toStringPtr(props["location"]),
+		Website:        toStringPtr(props["website"]),
+		Birthday:       toTimePtr(props["birthday"]),
+		CreatedAt:      props["createdAt"].(time.Time),
+		UpdatedAt:      props["updatedAt"].(time.Time),
 	}
 }
 
 func extractUserFromEagerResult(res *neo4j.EagerResult) (*models.User, error) {
 	if len(res.Records) == 0 {
 		return nil, fmt.Errorf("no user found")
+
 	}
 
 	user, ok := res.Records[0].Get("u")
 	if !ok {
-		return nil, fmt.Errorf("failed to extract user node")	
-	}		
+		return nil, fmt.Errorf("failed to extract user node")
+	}
 
 	return extractUserFromNode(user), nil
 }
-
 
 func joinClauses(clauses []string, sep string) string {
 	result := ""

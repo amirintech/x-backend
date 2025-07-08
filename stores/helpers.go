@@ -1,7 +1,8 @@
 package stores
 
-import "time"
-
+import (
+	"time"
+)
 
 func toStringPtr(val any) *string {
 	if val == nil {
