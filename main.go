@@ -38,7 +38,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Connection established.")
+	fmt.Println("Database connection established.")
 
 	// Init server
 	server := api.NewServer(&driver, &dbCtx)

@@ -9,8 +9,6 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-
-
 func  setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context) *http.ServeMux {
 	router := http.NewServeMux()
 
@@ -44,14 +42,15 @@ func setupAuthRoutes(router *http.ServeMux, authHandlers *handlers.AuthHandlers)
 
 func setupUserRoutes(router *http.ServeMux, userHandlers *handlers.UserHandlers) {
 	router.HandleFunc("GET /api/users/{id}", userHandlers.GetUserByID)
-
+	registerProtectedRoute(router, userHandlers.GetCurrentUser, "GET /api/users")
+	registerProtectedRoute(router, userHandlers.UpdateUser, "PUT /api/users")
 }
 
 func setupTweetRoutes(router *http.ServeMux, tweetHandlers *handlers.TweetHandlers) {
 
 }
 
-// func registerProtectedRoute(router *http.ServeMux, handler http.HandlerFunc, path string) {
-// 	router.HandleFunc(path, JWTAuthMiddleware(handler))
-// }
+func registerProtectedRoute(router *http.ServeMux, handler http.HandlerFunc, path string) {
+	router.HandleFunc(path, jwtAuthMiddleware(handler))
+}
 
