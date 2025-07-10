@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>X-Backend Demo</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f4f6fa;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 600px;
+        margin: 40px auto;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px #0001;
+        padding: 24px;
+      }
+      h1 {
+        text-align: center;
+      }
+      .hidden {
+        display: none;
+      }
+      .tweet {
+        border-bottom: 1px solid #eee;
+        padding: 12px 0;
+      }
+      .tweet:last-child {
+        border-bottom: none;
+      }
+      .tweet-content {
+        font-size: 1.1em;
+        margin-bottom: 6px;
+      }
+      .tweet-actions button {
+        margin-right: 8px;
+      }
+      .notification {
+        background: #e6f7ff;
+        border-left: 4px solid #1890ff;
+        margin: 8px 0;
+        padding: 8px;
+        border-radius: 4px;
+      }
+      .form-group {
+        margin-bottom: 16px;
+      }
+      label {
+        display: block;
+        margin-bottom: 4px;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        background: #1890ff;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:disabled {
+        background: #ccc;
+      }
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+      .logout {
+        color: #1890ff;
+        background: none;
+        border: none;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div id="login-section">
+        <h1>Login</h1>
+        <form id="login-form">
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input type="email" id="login-email" required />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" required />
+          </div>
+          <button type="submit">Login</button>
+        </form>
+        <p>or <a href="#" id="show-register">Register</a></p>
+      </div>
+      <div id="register-section" class="hidden">
+        <h1>Register</h1>
+        <form id="register-form">
+          <div class="form-group">
+            <label for="register-username">Username</label>
+            <input type="text" id="register-username" required />
+          </div>
+          <div class="form-group">
+            <label for="register-name">Name</label>
+            <input type="text" id="register-name" required />
+          </div>
+          <div class="form-group">
+            <label for="register-email">Email</label>
+            <input type="email" id="register-email" required />
+          </div>
+          <div class="form-group">
+            <label for="register-password">Password</label>
+            <input type="password" id="register-password" required />
+          </div>
+          <button type="submit">Register</button>
+        </form>
+        <p>or <a href="#" id="show-login">Login</a></p>
+      </div>
+      <div id="main-section" class="hidden">
+        <div class="topbar">
+          <span id="welcome-user"></span>
+          <button class="logout" id="logout-btn">Logout</button>
+        </div>
+        <h2>Notifications</h2>
+        <div id="notifications"></div>
+        <h2>New Tweet</h2>
+        <form id="tweet-form">
+          <div class="form-group">
+            <textarea
+              id="tweet-content"
+              rows="2"
+              maxlength="280"
+              placeholder="What's happening?"
+              required
+            ></textarea>
+          </div>
+          <button type="submit">Tweet</button>
+        </form>
+        <h2>Tweets</h2>
+        <div id="tweets"></div>
+      </div>
+    </div>
+    <script>
+      // --- Config ---
+      const API_BASE = "/api"; // Change if backend is on a different host/port
+
+      // --- Auth ---
+      function saveToken(token) {
+        localStorage.setItem("token", token);
+      }
+      function getToken() {
+        return localStorage.getItem("token");
+      }
+      function clearToken() {
+        localStorage.removeItem("token");
+      }
+
+      function authHeaders() {
+        const token = getToken();
+        return token ? { Authorization: "Bearer " + token } : {};
+      }
+
+      // --- UI helpers ---
+      function show(id) {
+        document.getElementById(id).classList.remove("hidden");
+      }
+      function hide(id) {
+        document.getElementById(id).classList.add("hidden");
+      }
+      function setText(id, text) {
+        document.getElementById(id).textContent = text;
+      }
+      function appendNotification(msg) {
+        const n = document.createElement("div");
+        n.className = "notification";
+        n.textContent = msg;
+        document.getElementById("notifications").prepend(n);
+      }
+
+      // --- Auth flow ---
+      function showMain() {
+        hide("login-section");
+        hide("register-section");
+        show("main-section");
+        fetchCurrentUser();
+        fetchTweets();
+        subscribeNotifications();
+      }
+      function showLogin() {
+        show("login-section");
+        hide("register-section");
+        hide("main-section");
+      }
+      function showRegister() {
+        hide("login-section");
+        show("register-section");
+        hide("main-section");
+      }
+
+      document.getElementById("show-register").onclick = (e) => {
+        e.preventDefault();
+        showRegister();
+      };
+      document.getElementById("show-login").onclick = (e) => {
+        e.preventDefault();
+        showLogin();
+      };
+      document.getElementById("logout-btn").onclick = () => {
+        clearToken();
+        showLogin();
+      };
+
+      // --- Login ---
+      document.getElementById("login-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("login-email").value;
+        const password = document.getElementById("login-password").value;
+        try {
+          const res = await fetch(API_BASE + "/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const data = await res.json();
+          if (res.ok && data.token) {
+            saveToken(data.token);
+            showMain();
+          } else {
+            alert(data.error || "Login failed");
+          }
+        } catch (err) {
+          alert("Network error");
+        }
+      };
+
+      // --- Register ---
+      document.getElementById("register-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const username = document.getElementById("register-username").value;
+        const name = document.getElementById("register-name").value;
+        const email = document.getElementById("register-email").value;
+        const password = document.getElementById("register-password").value;
+        try {
+          const res = await fetch(API_BASE + "/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, name, email, password }),
+          });
+          const data = await res.json();
+          if (res.ok && data.token) {
+            saveToken(data.token);
+            showMain();
+          } else {
+            alert(data.error || "Registration failed");
+          }
+        } catch (err) {
+          alert("Network error");
+        }
+      };
+
+      // --- Fetch current user ---
+      async function fetchCurrentUser() {
+        try {
+          const res = await fetch(API_BASE + "/users", {
+            headers: authHeaders(),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setText("welcome-user", "Welcome, " + (data.name || data.username));
+          } else {
+            clearToken();
+            showLogin();
+          }
+        } catch (err) {
+          clearToken();
+          showLogin();
+        }
+      }
+
+      // --- Tweets ---
+      async function fetchTweets() {
+        // This endpoint is assumed; adjust if needed
+        let res, data;
+        try {
+          res = await fetch(API_BASE + "/tweets", { headers: authHeaders() });
+          console.log(res);
+          data = await res.json();
+        } catch (err) {
+          console.log(err);
+          document.getElementById("tweets").innerHTML =
+            "<em>Failed to load tweets.</em>";
+          return;
+        }
+        if (!res.ok) {
+          document.getElementById("tweets").innerHTML =
+            "<em>Failed to load tweets.</em>";
+          return;
+        }
+        document.getElementById("tweets").innerHTML = "";
+        (data || []).forEach((tweet) => {
+          const div = document.createElement("div");
+          div.className = "tweet";
+          div.innerHTML = `
+          <div class="tweet-content">${tweet.content || ""}</div>
+          <div class="tweet-actions">
+            <button onclick="likeTweet('${tweet.id}')">Like (${
+            tweet.likesCount || 0
+          })</button>
+          </div>
+        `;
+          document.getElementById("tweets").appendChild(div);
+        });
+      }
+
+      // --- Create tweet ---
+      document.getElementById("tweet-form").onsubmit = async (e) => {
+        e.preventDefault();
+        const content = document.getElementById("tweet-content").value;
+        try {
+          const res = await fetch(API_BASE + "/tweets", {
+            method: "POST",
+            headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ content }),
+          });
+          if (res.ok) {
+            document.getElementById("tweet-content").value = "";
+            fetchTweets();
+          } else {
+            const data = await res.json();
+            alert(data.error || "Failed to tweet");
+          }
+        } catch (err) {
+          alert("Network error");
+        }
+      };
+
+      // --- Like tweet ---
+      window.likeTweet = async function (tweetId) {
+        try {
+          const res = await fetch(API_BASE + `/tweets/${tweetId}/like`, {
+            method: "POST",
+            headers: authHeaders(),
+          });
+          if (res.ok) {
+            fetchTweets();
+          } else {
+            const data = await res.json();
+            alert(data.error || "Failed to like");
+          }
+        } catch (err) {
+          alert("Network error");
+        }
+      };
+
+      // --- Notifications (SSE) ---
+      let eventSource;
+      function subscribeNotifications() {
+        if (eventSource) eventSource.close();
+        eventSource = new EventSource(API_BASE + "/notifications", {
+          withCredentials: false,
+        });
+        eventSource.onmessage = function (event) {
+          try {
+            const data = JSON.parse(event.data);
+            appendNotification(
+              `New notification: ${data.type} from user ${data.author_user_id}`
+            );
+            console.log(data);
+          } catch (e) {
+            console.log(e);
+            /* ignore */
+          }
+        };
+        eventSource.onerror = function () {
+          console.log("Notifications connection lost.");
+          appendNotification("Notifications connection lost.");
+          eventSource.close();
+        };
+      }
+
+      // --- Init ---
+      if (getToken()) {
+        showMain();
+      } else {
+        showLogin();
+      }
+    </script>
+  </body>
+</html>

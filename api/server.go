@@ -11,9 +11,9 @@ type Server struct {
 	router *http.ServeMux
 }
 
-func NewServer(driver *neo4j.DriverWithContext, dbCtx *context.Context) *Server {	
+func NewServer(driver *neo4j.DriverWithContext, dbCtx *context.Context) *Server {
 	return &Server{
-		router: setupMux(driver, dbCtx),	
+		router: setupMux(driver, dbCtx),
 	}
 }
 

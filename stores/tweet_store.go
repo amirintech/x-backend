@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aimrintech/x-backend/models"
+	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -27,14 +28,16 @@ type TweetStore interface {
 }
 
 type tweetStore struct {
-	driver *neo4j.DriverWithContext
-	dbCtx  *context.Context
+	driver               *neo4j.DriverWithContext
+	dbCtx                *context.Context
+	notificationsService notifications.Notifications
 }
 
-func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context) TweetStore {
+func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService notifications.Notifications) TweetStore {
 	return &tweetStore{
-		driver: driver,
-		dbCtx:  dbCtx,
+		driver:               driver,
+		dbCtx:                dbCtx,
+		notificationsService: notificationsService,
 	}
 }
 
@@ -146,6 +149,9 @@ func (s *tweetStore) LikeTweet(tweetID string, userID string) error {
 	if err != nil {
 		return err
 	}
+
+	s.notificationsService.Publish(models.NotificationTypeLike, models.NewNotification(userID, tweetID, nil, models.NotificationTypeLike))
+
 	return nil
 }
 
@@ -180,6 +186,8 @@ func (s *tweetStore) Retweet(tweetID string, userID string) error {
 	if err != nil {
 		return err
 	}
+
+	s.notificationsService.Publish(models.NotificationTypeRetweet, models.NewNotification(userID, tweetID, nil, models.NotificationTypeRetweet))
 
 	return nil
 }
@@ -223,6 +231,8 @@ func (s *tweetStore) QuoteTweet(originalTweetID string, userID string, quotedTwe
 	if err != nil {
 		return nil, err
 	}
+
+	s.notificationsService.Publish(models.NotificationTypeRetweet, models.NewNotification(userID, originalTweetID, nil, models.NotificationTypeRetweet))
 
 	return createdTweet, nil
 }

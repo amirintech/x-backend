@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aimrintech/x-backend/models"
+	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -23,14 +24,16 @@ type UserStore interface {
 }
 
 type userStore struct {
-	driver *neo4j.DriverWithContext
-	dbCtx  *context.Context
+	driver               *neo4j.DriverWithContext
+	dbCtx                *context.Context
+	notificationsService notifications.Notifications
 }
 
-func NewUserStore(driver *neo4j.DriverWithContext, dbCtx *context.Context) UserStore {
+func NewUserStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService notifications.Notifications) UserStore {
 	return &userStore{
-		driver: driver,
-		dbCtx:  dbCtx,
+		driver:               driver,
+		dbCtx:                dbCtx,
+		notificationsService: notificationsService,
 	}
 }
 
@@ -226,6 +229,8 @@ func (s *userStore) FollowUser(followerID, followingID string) error {
 	if err != nil {
 		return err
 	}
+
+	s.notificationsService.Publish(models.NotificationTypeFollow, models.NewNotification(followingID, followerID, nil, models.NotificationTypeFollow))
 
 	return nil
 }

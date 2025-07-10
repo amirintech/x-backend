@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aimrintech/x-backend/models"
+	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/joho/godotenv"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
@@ -50,7 +51,8 @@ func setupTestStore(t *testing.T) (UserStore, func()) {
 		t.Fatalf("Failed to wipe database: %v", err)
 	}
 	ctx := context.Background()
-	store := NewUserStore(&driver, &ctx)
+	notificationsService := notifications.NewNotificationsService()
+	store := NewUserStore(&driver, &ctx, notificationsService)
 	cleanup := func() {
 		driver.Close(context.Background())
 	}

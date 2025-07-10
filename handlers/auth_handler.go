@@ -20,7 +20,7 @@ func NewAuthHandlers(userStore *stores.UserStore) *AuthHandlers {
 	return &AuthHandlers{userStore: userStore}
 }
 
-func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {	
+func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	type LoginRequestBody struct {
 		Email    string `json:"email" validate:"required,email,min=6,max=255"`
 		Password string `json:"password" validate:"required,min=8,max=255"`
@@ -48,7 +48,7 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "User not found")
 		return
-	}	
+	}
 
 	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(user.Password)); err != nil {
 		writeError(w, http.StatusUnauthorized, "Invalid credentials")
@@ -67,8 +67,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	type RegisterRequestBody struct {
 		Username string `json:"username" validate:"required,min=2,max=32,alphanum"`
-		Name string `json:"name" validate:"required,min=2,max=32"`
-		Email string `json:"email" validate:"required,email,min=6,max=255"`
+		Name     string `json:"name" validate:"required,min=2,max=32"`
+		Email    string `json:"email" validate:"required,email,min=6,max=255"`
 		Password string `json:"password" validate:"required,min=8,max=255"`
 	}
 
@@ -92,13 +92,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	user, err := (*h.userStore).CreateUser(&models.User{
 		Username: body.Username,
-		Name: body.Name,	
-		Email: body.Email,
+		Name:     body.Name,
+		Email:    body.Email,
 		Password: string(hashedPassword),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create user")
-		return	
+		return
 	}
 
 	token, err := generateJWT(user.ID)
@@ -139,8 +139,7 @@ func generateJWT(userID string) (string, error) {
 // 		return userID, nil
 // 	}
 // 	return "", errors.New("invalid token")
-// } 
-
+// }
 
 // type contextKey string
 
@@ -162,4 +161,4 @@ func generateJWT(userID string) (string, error) {
 // 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 // 		next.ServeHTTP(w, r.WithContext(ctx))
 // 	})
-// } 
+// }
