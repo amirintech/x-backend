@@ -8,11 +8,12 @@ import (
 	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/aimrintech/x-backend/stores"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"golang.org/x/oauth2"
 )
 
 var chainMiddleware = chain(headersMiddleware, authMiddleware)
 
-func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context) *http.ServeMux {
+func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context, authConfig *oauth2.Config) *http.ServeMux {
 	router := http.NewServeMux()
 
 	// Health check
@@ -25,8 +26,12 @@ func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context) *http.ServeMu
 	notificationsService := notifications.NewNotificationsService()
 
 	// HTML FOR TESTING
+	// router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	// 	http.ServeFile(w, r, "frontend/index.html")
+	// })
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "frontend/index.html")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("<h1>Hello World</h1>"))
 	})
 
 	// User routes
@@ -36,7 +41,7 @@ func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context) *http.ServeMu
 
 	// Auth routes
 	authHandlers := handlers.NewAuthHandlers(&userStore)
-	setupAuthRoutes(router, authHandlers)
+	setupAuthRoutes(router, authHandlers, authConfig)
 
 	// Tweet routes
 	tweetStore := stores.NewTweetStore(db, dbCtx, notificationsService)
@@ -44,15 +49,18 @@ func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context) *http.ServeMu
 	setupTweetRoutes(router, tweetHandlers)
 
 	// Notifications routes
-	notificationsHandlers := handlers.NewNotificationsHandlers(notificationsService)
+	notificationsStore := stores.NewNotificationsStore(db, dbCtx)
+	notificationsHandlers := handlers.NewNotificationsHandlers(notificationsService, notificationsStore)
 	setupNotificationsRoutes(router, notificationsHandlers)
 
 	return router
 }
 
-func setupAuthRoutes(router *http.ServeMux, authHandlers *handlers.AuthHandlers) {
+func setupAuthRoutes(router *http.ServeMux, authHandlers *handlers.AuthHandlers, authConfig *oauth2.Config) {
 	router.HandleFunc("POST /api/auth/login", headersMiddleware(authHandlers.Login))
 	router.HandleFunc("POST /api/auth/register", headersMiddleware(authHandlers.Register))
+	router.HandleFunc("GET /api/oauth/login", authHandlers.OAuthLoginHandler(authConfig))
+	router.HandleFunc("GET /api/oauth/callback", authHandlers.OAuthCallbackHandler(authConfig))
 }
 
 func setupUserRoutes(router *http.ServeMux, userHandlers *handlers.UserHandlers) {
@@ -62,9 +70,14 @@ func setupUserRoutes(router *http.ServeMux, userHandlers *handlers.UserHandlers)
 }
 
 func setupTweetRoutes(router *http.ServeMux, tweetHandlers *handlers.TweetHandlers) {
+	router.HandleFunc("GET /api/tweets", chainMiddleware(tweetHandlers.GetTweets))
+	router.HandleFunc("GET /api/tweets/{id}", chainMiddleware(tweetHandlers.GetTweetByID))
+	router.HandleFunc("POST /api/tweets", chainMiddleware(tweetHandlers.CreateTweet))
+	router.HandleFunc("POST /api/tweets/{id}/like", chainMiddleware(tweetHandlers.LikeTweet))
+	router.HandleFunc("POST /api/tweets/{id}/unlike", chainMiddleware(tweetHandlers.UnlikeTweet))
 
 }
 
 func setupNotificationsRoutes(router *http.ServeMux, notificationsHandlers *handlers.NotificationsHandlers) {
-	router.HandleFunc("GET /api/notifications", chainMiddleware(notificationsHandlers.StreamNotifications))
+	router.HandleFunc("GET /api/notifications/{type}/{userID}", notificationsHandlers.StreamNotifications)
 }

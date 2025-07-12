@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aimrintech/x-backend/constants"
+	"github.com/aimrintech/x-backend/utils"
 )
 
 func chain(middlewares ...func(http.HandlerFunc) http.HandlerFunc) func(http.HandlerFunc) http.HandlerFunc {
@@ -35,7 +36,7 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-		userID, err := validateJWT(tokenString)
+		userID, err := utils.ValidateJWT(tokenString)
 		if err != nil {
 			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 			return

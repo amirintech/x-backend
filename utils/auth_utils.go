@@ -1,4 +1,4 @@
-package api
+package utils
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-func generateJWT(userID string) (string, error) {
+func GenerateJWT(userID string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"exp":     time.Now().Add(72 * time.Hour).Unix(),
@@ -19,7 +19,7 @@ func generateJWT(userID string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-func validateJWT(tokenString string) (string, error) {
+func ValidateJWT(tokenString string) (string, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")

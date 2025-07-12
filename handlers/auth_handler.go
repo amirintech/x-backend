@@ -1,15 +1,19 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
-	"os"
-	"time"
 
+	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
 	"github.com/aimrintech/x-backend/stores"
+	"github.com/aimrintech/x-backend/utils"
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-jwt/jwt/v5"
+	nanoid "github.com/matoous/go-nanoid/v2"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
 )
 
 type AuthHandlers struct {
@@ -32,15 +36,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validate := validator.New()
-	if err := validate.Struct(body); err != nil {
+	if err := validator.New().Struct(body); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to hash password")
 		return
 	}
 
@@ -50,12 +47,12 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(user.Password)); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)); err != nil {
 		writeError(w, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
 
-	token, err := generateJWT(user.ID)
+	token, err := utils.GenerateJWT(user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
@@ -95,13 +92,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     body.Name,
 		Email:    body.Email,
 		Password: string(hashedPassword),
-	})
+	}, constants.AuthProviderCreds)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
 
-	token, err := generateJWT(user.ID)
+	token, err := utils.GenerateJWT(user.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
@@ -110,55 +107,65 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-
-func generateJWT(userID string) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"exp":     time.Now().Add(72 * time.Hour).Unix(),
+func (h *AuthHandlers) OAuthLoginHandler(authConfig *oauth2.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		url := authConfig.AuthCodeURL("state", oauth2.AccessTypeOffline)
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(jwtSecret)
 }
 
-// func validateJWT(tokenString string) (string, error) {
-// 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-// 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-// 			return nil, errors.New("unexpected signing method")
-// 		}
-// 		return jwtSecret, nil
-// 	})
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-// 		userID, ok := claims["user_id"].(string)
-// 		if !ok {
-// 			return "", errors.New("user_id not found in token")
-// 		}
-// 		return userID, nil
-// 	}
-// 	return "", errors.New("invalid token")
-// }
+func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.HandlerFunc {
+	fmt.Println("OAuthCallbackHandler")
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("r", r)
+		code := r.URL.Query().Get("code")
 
-// type contextKey string
+		t, err := authConfig.Exchange(context.Background(), code)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Failed to exchange code for access token")
+			return
+		}
 
-// const UserIDKey contextKey = "userID"
+		client := authConfig.Client(context.Background(), t)
+		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Failed to exchange code for access token")
+			return
+		}
+		defer resp.Body.Close()
+		fmt.Println("resp", resp)
 
-// func jwtAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
-// 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 		authHeader := r.Header.Get("Authorization")
-// 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-// 			http.Error(w, "Missing or invalid Authorization header", http.StatusUnauthorized)
-// 			return
-// 		}
-// 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-// 		userID, err := validateJWT(tokenString)
-// 		if err != nil {
-// 			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
-// 			return
-// 		}
-// 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
-// 		next.ServeHTTP(w, r.WithContext(ctx))
-// 	})
-// }
+		var v map[string]any
+		err = json.NewDecoder(resp.Body).Decode(&v)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to decode response body")
+			return
+		}
+
+		fmt.Println("v", v)
+
+		username, err := nanoid.New(10)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to generate username")
+			return
+		}
+
+		user, err := (*h.userStore).CreateUser(&models.User{
+			Name:     v["name"].(string),
+			Email:    v["email"].(string),
+			Username: v["name"].(string) + "_" + username,
+		}, constants.AuthProviderGoogle)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to create user")
+			return
+		}
+
+		token, err := utils.GenerateJWT(user.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to generate token")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"token": token})
+	}
+}

@@ -291,11 +291,11 @@
         // This endpoint is assumed; adjust if needed
         let res, data;
         try {
-          res = await fetch(API_BASE + "/tweets", { headers: authHeaders() });
-          console.log(res);
+          res = await fetch(API_BASE + "/tweets?limit=10&offset=0", {
+            headers: authHeaders(),
+          });
           data = await res.json();
         } catch (err) {
-          console.log(err);
           document.getElementById("tweets").innerHTML =
             "<em>Failed to load tweets.</em>";
           return;
@@ -365,10 +365,14 @@
       let eventSource;
       function subscribeNotifications() {
         if (eventSource) eventSource.close();
-        eventSource = new EventSource(API_BASE + "/notifications", {
-          withCredentials: false,
-        });
+        eventSource = new EventSource(
+          API_BASE + `/notifications/like/54b4d9f3-b15e-4eae-ac50-0c1627a8ff81`,
+          {
+            withCredentials: false,
+          }
+        );
         eventSource.onmessage = function (event) {
+          console.log("onmessage", event);
           try {
             const data = JSON.parse(event.data);
             appendNotification(

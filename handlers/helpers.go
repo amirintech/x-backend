@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
+
+	"github.com/aimrintech/x-backend/constants"
 )
 
 func writeJSON(w http.ResponseWriter, status int, data any) {
@@ -19,3 +22,10 @@ func readJSON(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
 }
 
+func getUserID(r *http.Request) (string, error) {
+	userID, ok := r.Context().Value(constants.UserIDKey).(string)
+	if !ok {
+		return "", errors.New("unauthorized")
+	}
+	return userID, nil
+}

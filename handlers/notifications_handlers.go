@@ -6,23 +6,26 @@ import (
 
 	"github.com/aimrintech/x-backend/models"
 	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/stores"
 )
 
 type NotificationsHandlers struct {
 	notificationsService notifications.Notifications
+	notificationsStore   stores.NotificationsStore
 }
 
-func NewNotificationsHandlers(notificationsService notifications.Notifications) *NotificationsHandlers {
+func NewNotificationsHandlers(notificationsService notifications.Notifications, notificationsStore stores.NotificationsStore) *NotificationsHandlers {
 	return &NotificationsHandlers{
 		notificationsService: notificationsService,
+		notificationsStore:   notificationsStore,
 	}
 }
 
 func (h *NotificationsHandlers) StreamNotifications(w http.ResponseWriter, r *http.Request) {
-	// extract userID
-	userID, ok := r.Context().Value("userID").(string)
-	if !ok || userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	notificationType := r.PathValue("type")
+	userID := r.PathValue("userID")
+	if notificationType == "" || userID == "" {
+		writeError(w, http.StatusBadRequest, "Type and user ID are required")
 		return
 	}
 
@@ -34,13 +37,13 @@ func (h *NotificationsHandlers) StreamNotifications(w http.ResponseWriter, r *ht
 	// get flusher
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "Streaming unsupported")
 		return
 	}
 
 	// subscribe to notifications
-	notificationsChan := h.notificationsService.Subscribe(models.NotificationTypeFollow, userID)
-	defer h.notificationsService.Unsubscribe(models.NotificationTypeFollow, userID)
+	notificationsChan := h.notificationsService.Subscribe(models.NotificationType(notificationType), userID)
+	defer h.notificationsService.Unsubscribe(models.NotificationType(notificationType), userID)
 
 	ctx := r.Context()
 

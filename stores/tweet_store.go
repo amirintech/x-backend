@@ -12,6 +12,7 @@ import (
 )
 
 type TweetStore interface {
+	GetTweets(limit int, offset int) ([]*models.Tweet, error)
 	GetTweetByID(id string) (*models.Tweet, error)
 	CreateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error)
 	UpdateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error)
@@ -39,6 +40,31 @@ func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, noti
 		dbCtx:                dbCtx,
 		notificationsService: notificationsService,
 	}
+}
+
+func (s *tweetStore) GetTweets(limit int, offset int) ([]*models.Tweet, error) {
+	res, err := neo4j.ExecuteQuery(
+		*s.dbCtx,
+		*s.driver,
+		`MATCH (t:Tweet) LIMIT $limit OFFSET $offset RETURN t`,
+		map[string]any{"limit": limit, "offset": offset},
+		neo4j.EagerResultTransformer,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tweets := make([]*models.Tweet, 0, limit)
+	for _, record := range res.Records {
+		tweet, ok := record.Get("t")
+		if !ok {
+			continue
+		}
+
+		tweets = append(tweets, extractTweetFromNode(tweet))
+	}
+
+	return tweets, nil
 }
 
 func (s *tweetStore) GetTweetByID(id string) (*models.Tweet, error) {
@@ -150,6 +176,7 @@ func (s *tweetStore) LikeTweet(tweetID string, userID string) error {
 		return err
 	}
 
+	fmt.Println("like tweet", userID, tweetID)
 	s.notificationsService.Publish(models.NotificationTypeLike, models.NewNotification(userID, tweetID, nil, models.NotificationTypeLike))
 
 	return nil

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/aimrintech/x-backend/models"
+	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/joho/godotenv"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
@@ -39,8 +40,9 @@ func setupTestTweetStore(t *testing.T) (TweetStore, *models.User, func()) {
 		t.Fatalf("Failed to wipe database: %v", err)
 	}
 	ctx := context.Background()
-	store := NewTweetStore(&driver, &ctx)
-	userStore := NewUserStore(&driver, &ctx)
+	notificationsService := notifications.NewNotificationsService()
+	store := NewTweetStore(&driver, &ctx, notificationsService)
+	userStore := NewUserStore(&driver, &ctx, notificationsService)
 	user := &models.User{
 		Name:     "Tweet User",
 		Email:    "tweetuser@example.com",

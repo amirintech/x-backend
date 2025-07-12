@@ -67,7 +67,7 @@ func (s *NotificationsService) Publish(topic models.NotificationType, notificati
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	ch, ok := s.subscribers[topic][notification.AuthorUserID]
+	ch, ok := s.subscribers[topic][notification.TargetUserID]
 	if !ok {
 		return
 	}
@@ -75,8 +75,6 @@ func (s *NotificationsService) Publish(topic models.NotificationType, notificati
 	select {
 	case ch <- *notification:
 	default:
-		log.Printf("Dropping notification for user %s: channel full", notification.AuthorUserID)
+		log.Printf("Dropping notification for user %s: channel full", notification.TargetUserID)
 	}
-
-	log.Printf("Published notification for user %s: %s", notification.AuthorUserID, notification.Type)
 }

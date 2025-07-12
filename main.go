@@ -7,9 +7,13 @@ import (
 	"os"
 
 	"github.com/aimrintech/x-backend/api"
+	"github.com/aimrintech/x-backend/config"
 	"github.com/joho/godotenv"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"golang.org/x/oauth2"
 )
+
+var AuthConfig *oauth2.Config
 
 func init() {
 	// Load environment variables
@@ -18,6 +22,9 @@ func init() {
 		log.Fatalf("Error loading .env file: %v", err)
 		panic(err)
 	}
+
+	// Initialize auth config
+	AuthConfig = config.InitAuthConfig()
 }
 
 func main() {
@@ -41,7 +48,7 @@ func main() {
 	fmt.Println("Database connection established.")
 
 	// Init server
-	server := api.NewServer(&driver, &dbCtx)
+	server := api.NewServer(&driver, &dbCtx, AuthConfig)
 	fmt.Println("Server listening on port 8080")
 	server.Start(":8080")
 }

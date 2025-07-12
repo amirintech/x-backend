@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
 	"github.com/aimrintech/x-backend/services/notifications"
 	"github.com/google/uuid"
@@ -14,7 +15,7 @@ import (
 type UserStore interface {
 	GetUserByID(id string) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
-	CreateUser(user *models.User) (*models.User, error)
+	CreateUser(user *models.User, authProvider constants.AuthProvider) (*models.User, error)
 	UpdateUser(user *models.User) (*models.User, error)
 	DeleteUser(id string) error
 	FollowUser(followerID, followingID string) error
@@ -67,7 +68,7 @@ func (s *userStore) GetUserByEmail(email string) (*models.User, error) {
 	return extractUserFromEagerResult(res)
 }
 
-func (s *userStore) CreateUser(user *models.User) (*models.User, error) {
+func (s *userStore) CreateUser(user *models.User, authProvider constants.AuthProvider) (*models.User, error) {
 	userID := uuid.New().String()
 
 	res, err := neo4j.ExecuteQuery(
@@ -91,14 +92,16 @@ func (s *userStore) CreateUser(user *models.User) (*models.User, error) {
 			birthday: null,
 			website: null,
 			bio: null,
-			location: null
+			location: null,
+			authProvider: $authProvider
 		}) RETURN u`,
 		map[string]any{
-			"id":       userID,
-			"name":     user.Name,
-			"email":    user.Email,
-			"password": user.Password,
-			"username": user.Username,
+			"id":           userID,
+			"name":         user.Name,
+			"email":        user.Email,
+			"password":     user.Password,
+			"username":     user.Username,
+			"authProvider": authProvider,
 		},
 		neo4j.EagerResultTransformer,
 	)
