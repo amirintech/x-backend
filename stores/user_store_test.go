@@ -7,8 +7,9 @@ import (
 	"path"
 	"testing"
 
+	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
-	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/services"
 	"github.com/joho/godotenv"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,7 @@ func setupTestStore(t *testing.T) (UserStore, func()) {
 		t.Fatalf("Failed to wipe database: %v", err)
 	}
 	ctx := context.Background()
-	notificationsService := notifications.NewNotificationsService()
+	notificationsService := services.NewNotificationsService()
 	store := NewUserStore(&driver, &ctx, notificationsService)
 	cleanup := func() {
 		driver.Close(context.Background())
@@ -71,7 +72,7 @@ func TestUserStore_CRUD(t *testing.T) {
 	}
 
 	// Create
-	created, err := store.CreateUser(user)
+	created, err := store.CreateUser(user, constants.AUTH_PROVIDER_CREDS)
 	assert.NoError(t, err)
 	assert.NotNil(t, created)
 	assert.Equal(t, user.Email, created.Email)
@@ -117,8 +118,8 @@ func TestUserStore_FollowUnfollow(t *testing.T) {
 		Password: "passB",
 		Username: "userb",
 	}
-	createdA, _ := store.CreateUser(userA)
-	createdB, _ := store.CreateUser(userB)
+	createdA, _ := store.CreateUser(userA, constants.AUTH_PROVIDER_CREDS)
+	createdB, _ := store.CreateUser(userB, constants.AUTH_PROVIDER_CREDS)
 
 	// Follow
 	err := store.FollowUser(createdA.ID, createdB.ID)

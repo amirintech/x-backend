@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/aimrintech/x-backend/models"
-	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/services"
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -31,10 +31,10 @@ type TweetStore interface {
 type tweetStore struct {
 	driver               *neo4j.DriverWithContext
 	dbCtx                *context.Context
-	notificationsService notifications.Notifications
+	notificationsService services.Notifications
 }
 
-func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService notifications.Notifications) TweetStore {
+func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService services.Notifications) TweetStore {
 	return &tweetStore{
 		driver:               driver,
 		dbCtx:                dbCtx,

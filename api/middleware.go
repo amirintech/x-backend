@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/utils"
@@ -20,28 +19,34 @@ func chain(middlewares ...func(http.HandlerFunc) http.HandlerFunc) func(http.Han
 
 func headersMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set("Server", "Aimr")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
 
 func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, "Missing or invalid Authorization header", http.StatusUnauthorized)
+		tokenString, err := utils.GetAuthCookie(r)
+		if err != nil {
+			http.Error(w, "Missing authentication token", http.StatusUnauthorized)
 			return
 		}
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		userID, err := utils.ValidateJWT(tokenString)
 		if err != nil {
 			http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), constants.UserIDKey, userID)
+		ctx := context.WithValue(r.Context(), constants.USER_ID_KEY, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

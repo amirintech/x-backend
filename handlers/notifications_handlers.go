@@ -5,16 +5,16 @@ import (
 	"net/http"
 
 	"github.com/aimrintech/x-backend/models"
-	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/services"
 	"github.com/aimrintech/x-backend/stores"
 )
 
 type NotificationsHandlers struct {
-	notificationsService notifications.Notifications
+	notificationsService services.Notifications
 	notificationsStore   stores.NotificationsStore
 }
 
-func NewNotificationsHandlers(notificationsService notifications.Notifications, notificationsStore stores.NotificationsStore) *NotificationsHandlers {
+func NewNotificationsHandlers(notificationsService services.Notifications, notificationsStore stores.NotificationsStore) *NotificationsHandlers {
 	return &NotificationsHandlers{
 		notificationsService: notificationsService,
 		notificationsStore:   notificationsStore,

@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/aimrintech/x-backend/handlers"
-	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/services"
 	"github.com/aimrintech/x-backend/stores"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"golang.org/x/oauth2"
@@ -23,16 +23,7 @@ func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context, authConfig *o
 	})
 
 	// Setup services
-	notificationsService := notifications.NewNotificationsService()
-
-	// HTML FOR TESTING
-	// router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-	// 	http.ServeFile(w, r, "frontend/index.html")
-	// })
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<h1>Hello World</h1>"))
-	})
+	notificationsService := services.NewNotificationsService()
 
 	// User routes
 	userStore := stores.NewUserStore(db, dbCtx, notificationsService)
@@ -59,8 +50,9 @@ func setupMux(db *neo4j.DriverWithContext, dbCtx *context.Context, authConfig *o
 func setupAuthRoutes(router *http.ServeMux, authHandlers *handlers.AuthHandlers, authConfig *oauth2.Config) {
 	router.HandleFunc("POST /api/auth/login", headersMiddleware(authHandlers.Login))
 	router.HandleFunc("POST /api/auth/register", headersMiddleware(authHandlers.Register))
-	router.HandleFunc("GET /api/oauth/login", authHandlers.OAuthLoginHandler(authConfig))
-	router.HandleFunc("GET /api/oauth/callback", authHandlers.OAuthCallbackHandler(authConfig))
+	router.HandleFunc("GET /api/oauth/login", headersMiddleware(authHandlers.OAuthLoginHandler(authConfig)))
+	router.HandleFunc("GET /api/oauth/callback", headersMiddleware(authHandlers.OAuthCallbackHandler(authConfig)))
+	router.HandleFunc("POST /api/auth/logout", headersMiddleware(authHandlers.Logout))
 }
 
 func setupUserRoutes(router *http.ServeMux, userHandlers *handlers.UserHandlers) {

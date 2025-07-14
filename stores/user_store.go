@@ -7,7 +7,7 @@ import (
 
 	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
-	"github.com/aimrintech/x-backend/services/notifications"
+	"github.com/aimrintech/x-backend/services"
 	"github.com/google/uuid"
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -27,10 +27,10 @@ type UserStore interface {
 type userStore struct {
 	driver               *neo4j.DriverWithContext
 	dbCtx                *context.Context
-	notificationsService notifications.Notifications
+	notificationsService services.Notifications
 }
 
-func NewUserStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService notifications.Notifications) UserStore {
+func NewUserStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService services.Notifications) UserStore {
 	return &userStore{
 		driver:               driver,
 		dbCtx:                dbCtx,

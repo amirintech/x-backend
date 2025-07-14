@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
@@ -58,7 +59,8 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+	utils.SetAuthCookie(w, token)
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful"})
 }
 
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -81,18 +83,25 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// check if user already exists
+	user, err := (*h.userStore).GetUserByEmail(body.Email)
+	if err == nil && user != nil {
+		writeError(w, http.StatusBadRequest, "User already exists")
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to hash password")
 		return
 	}
 
-	user, err := (*h.userStore).CreateUser(&models.User{
+	user, err = (*h.userStore).CreateUser(&models.User{
 		Username: body.Username,
 		Name:     body.Name,
 		Email:    body.Email,
 		Password: string(hashedPassword),
-	}, constants.AuthProviderCreds)
+	}, constants.AUTH_PROVIDER_CREDS)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to create user")
 		return
@@ -104,7 +113,11 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"token": token})
+	// Set token as HTTP-only cookie
+	w.Header().Set("Set-Cookie", "token="+token+"; HttpOnly; SameSite=Strict; Max-Age="+strconv.Itoa(int(constants.AUTH_TOKEN_EXPIRY.Seconds())))
+
+	// Return success response without token in body
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Registration successful"})
 }
 
 func (h *AuthHandlers) OAuthLoginHandler(authConfig *oauth2.Config) http.HandlerFunc {
@@ -115,9 +128,7 @@ func (h *AuthHandlers) OAuthLoginHandler(authConfig *oauth2.Config) http.Handler
 }
 
 func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.HandlerFunc {
-	fmt.Println("OAuthCallbackHandler")
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("r", r)
 		code := r.URL.Query().Get("code")
 
 		t, err := authConfig.Exchange(context.Background(), code)
@@ -133,7 +144,6 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 			return
 		}
 		defer resp.Body.Close()
-		fmt.Println("resp", resp)
 
 		var v map[string]any
 		err = json.NewDecoder(resp.Body).Decode(&v)
@@ -142,30 +152,73 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 			return
 		}
 
-		fmt.Println("v", v)
-
 		username, err := nanoid.New(10)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to generate username")
 			return
 		}
 
-		user, err := (*h.userStore).CreateUser(&models.User{
+		email, ok := v["email"].(string)
+		if !ok {
+			writeError(w, http.StatusInternalServerError, "Email not found in OAuth response")
+			return
+		}
+
+		// Check if user already exists
+		user, err := (*h.userStore).GetUserByEmail(email)
+		if err == nil && user != nil {
+			// User exists, log them in
+			token, err := utils.GenerateJWT(user.ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "Failed to generate token")
+				return
+			}
+			utils.SetAuthCookie(w, token)
+			http.Redirect(w, r, "http://localhost:3000", http.StatusSeeOther)
+			return
+		}
+
+		// If error is not 'no user found', return error
+		if err != nil && err.Error() != "no user found" {
+			writeError(w, http.StatusInternalServerError, "Failed to check user existence")
+			return
+		}
+
+		// User does not exist, create new user
+		user, err = (*h.userStore).CreateUser(&models.User{
 			Name:     v["name"].(string),
-			Email:    v["email"].(string),
+			Email:    email,
 			Username: v["name"].(string) + "_" + username,
-		}, constants.AuthProviderGoogle)
+		}, constants.AUTH_PROVIDER_GOOGLE)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to create user")
 			return
 		}
 
 		token, err := utils.GenerateJWT(user.ID)
+		fmt.Println("token", token)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to generate token")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]string{"token": token})
+		valid, err := utils.VerifyJWT(token)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to verify token")
+			return
+		}
+		if !valid {
+			writeError(w, http.StatusUnauthorized, "Invalid token")
+			return
+		}
+
+		utils.SetAuthCookie(w, token)
+		http.Redirect(w, r, "http://localhost:3000", http.StatusSeeOther)
 	}
+}
+
+func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
+	utils.ClearAuthCookie(w)
+	fmt.Println("Cleared auth cookie")
+	writeJSON(w, http.StatusOK, map[string]string{"message": "Logout successful"})
 }

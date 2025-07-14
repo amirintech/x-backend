@@ -23,7 +23,7 @@ func readJSON(r *http.Request, v any) error {
 }
 
 func getUserID(r *http.Request) (string, error) {
-	userID, ok := r.Context().Value(constants.UserIDKey).(string)
+	userID, ok := r.Context().Value(constants.USER_ID_KEY).(string)
 	if !ok {
 		return "", errors.New("unauthorized")
 	}
