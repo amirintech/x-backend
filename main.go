@@ -18,7 +18,7 @@ var AuthConfig *oauth2.Config
 func init() {
 	// Load environment variables
 	err := godotenv.Load()
-	// fmt.Println("JWT_SECRET: ", []byte(os.Getenv("JWT_SECRET")))
+
 	if err != nil {
 		log.Fatalf("Error loading .env file: %v", err)
 		panic(err)

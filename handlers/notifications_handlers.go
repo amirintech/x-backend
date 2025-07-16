@@ -23,9 +23,14 @@ func NewNotificationsHandlers(notificationsService services.Notifications, notif
 
 func (h *NotificationsHandlers) StreamNotifications(w http.ResponseWriter, r *http.Request) {
 	notificationType := r.PathValue("type")
-	userID := r.PathValue("userID")
+	userID, err := getUserID(r)
+	if err != nil {
+		writeError(w, r, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
 	if notificationType == "" || userID == "" {
-		writeError(w, http.StatusBadRequest, "Type and user ID are required")
+		writeError(w, r, http.StatusBadRequest, "Type and user ID are required")
 		return
 	}
 
@@ -37,7 +42,7 @@ func (h *NotificationsHandlers) StreamNotifications(w http.ResponseWriter, r *ht
 	// get flusher
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "Streaming unsupported")
+		writeError(w, r, http.StatusInternalServerError, "Streaming unsupported")
 		return
 	}
 

@@ -17,17 +17,12 @@ func chain(middlewares ...func(http.HandlerFunc) http.HandlerFunc) func(http.Han
 	}
 }
 
-func headersMiddleware(next http.HandlerFunc) http.HandlerFunc {
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Set("Server", "Aimr")
-
 		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
+			if utils.HandleCORSPreflight(w, r) {
+				return
+			}
 		}
 
 		next.ServeHTTP(w, r)

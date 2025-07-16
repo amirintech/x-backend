@@ -22,33 +22,48 @@ func NewUserHandlers(userStore *stores.UserStore) *UserHandlers {
 func (h *UserHandlers) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	userID, err := getUserID(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		writeError(w, r, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
-
 	user, err := (*h.userStore).GetUserByID(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get user")
+		writeError(w, r, http.StatusInternalServerError, "Failed to get user")
 		return
 	}
 	user.Password = ""
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, r, http.StatusOK, user)
 }
 
 func (h *UserHandlers) GetUserByID(w http.ResponseWriter, r *http.Request) {
 	userID, err := getUserID(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		writeError(w, r, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
 	user, err := (*h.userStore).GetUserByID(userID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get user")
+		writeError(w, r, http.StatusInternalServerError, "Failed to get user")
 		return
 	}
 	user.Password = ""
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, r, http.StatusOK, user)
+}
+
+func (h *UserHandlers) GetUserByUsername(w http.ResponseWriter, r *http.Request) {
+	username := r.URL.Query().Get("username")
+	if username == "" {
+		writeError(w, r, http.StatusBadRequest, "Username is required")
+		return
+	}
+
+	user, err := (*h.userStore).GetUserByUsername(username)
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, "Failed to get user")
+		return
+	}
+	user.Password = ""
+	writeJSON(w, r, http.StatusOK, user)
 }
 
 // func (h *UserHandlers) CreateUser(w http.ResponseWriter, r *http.Request) {
@@ -102,19 +117,19 @@ func (h *UserHandlers) UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 	var body UpdateUserRequestBody
 	if err := readJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	validate := validator.New()
 	if err := validate.Struct(body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	userID, err := getUserID(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "Unauthorized")
+		writeError(w, r, http.StatusUnauthorized, "Unauthorized")
 		return
 	}
 
@@ -129,10 +144,10 @@ func (h *UserHandlers) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Birthday:       body.Birthday,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to update user")
+		writeError(w, r, http.StatusInternalServerError, "Failed to update user")
 		return
 	}
 
 	user.Password = ""
-	writeJSON(w, http.StatusOK, user)
+	writeJSON(w, r, http.StatusOK, user)
 }

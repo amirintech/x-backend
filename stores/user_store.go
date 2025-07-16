@@ -15,6 +15,7 @@ import (
 type UserStore interface {
 	GetUserByID(id string) (*models.User, error)
 	GetUserByEmail(email string) (*models.User, error)
+	GetUserByUsername(username string) (*models.User, error)
 	CreateUser(user *models.User, authProvider constants.AuthProvider) (*models.User, error)
 	UpdateUser(user *models.User) (*models.User, error)
 	DeleteUser(id string) error
@@ -59,6 +60,21 @@ func (s *userStore) GetUserByEmail(email string) (*models.User, error) {
 		*s.driver,
 		`MATCH (u:User {email: $email}) RETURN u`,
 		map[string]any{"email": email},
+		neo4j.EagerResultTransformer,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return extractUserFromEagerResult(res)
+}
+
+func (s *userStore) GetUserByUsername(username string) (*models.User, error) {
+	res, err := neo4j.ExecuteQuery(
+		*s.dbCtx,
+		*s.driver,
+		`MATCH (u:User {username: $username}) RETURN u`,
+		map[string]any{"username": username},
 		neo4j.EagerResultTransformer,
 	)
 	if err != nil {

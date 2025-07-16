@@ -3,9 +3,10 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/aimrintech/x-backend/constants"
 	"github.com/aimrintech/x-backend/models"
@@ -33,34 +34,34 @@ func (h *AuthHandlers) Login(w http.ResponseWriter, r *http.Request) {
 
 	var body LoginRequestBody
 	if err := readJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if err := validator.New().Struct(body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	user, err := (*h.userStore).GetUserByEmail(body.Email)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "User not found")
+		writeError(w, r, http.StatusInternalServerError, "User not found")
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)); err != nil {
-		writeError(w, http.StatusUnauthorized, "Invalid credentials")
+		writeError(w, r, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
 
 	token, err := utils.GenerateJWT(user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to generate token")
+		writeError(w, r, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
 
 	utils.SetAuthCookie(w, token)
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Login successful"})
+	writeJSON(w, r, http.StatusOK, map[string]string{"message": "Login successful"})
 }
 
 func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
@@ -73,26 +74,26 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 
 	var body RegisterRequestBody
 	if err := readJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	validate := validator.New()
 	if err := validate.Struct(body); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		writeError(w, r, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	// check if user already exists
 	user, err := (*h.userStore).GetUserByEmail(body.Email)
 	if err == nil && user != nil {
-		writeError(w, http.StatusBadRequest, "User already exists")
+		writeError(w, r, http.StatusBadRequest, "User already exists")
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to hash password")
+		writeError(w, r, http.StatusInternalServerError, "Failed to hash password")
 		return
 	}
 
@@ -103,13 +104,13 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 		Password: string(hashedPassword),
 	}, constants.AUTH_PROVIDER_CREDS)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to create user")
+		writeError(w, r, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
 
 	token, err := utils.GenerateJWT(user.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to generate token")
+		writeError(w, r, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
 
@@ -117,7 +118,7 @@ func (h *AuthHandlers) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Set-Cookie", "token="+token+"; HttpOnly; SameSite=Strict; Max-Age="+strconv.Itoa(int(constants.AUTH_TOKEN_EXPIRY.Seconds())))
 
 	// Return success response without token in body
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Registration successful"})
+	writeJSON(w, r, http.StatusOK, map[string]string{"message": "Registration successful"})
 }
 
 func (h *AuthHandlers) OAuthLoginHandler(authConfig *oauth2.Config) http.HandlerFunc {
@@ -133,14 +134,14 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 
 		t, err := authConfig.Exchange(context.Background(), code)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "Failed to exchange code for access token")
+			writeError(w, r, http.StatusBadRequest, "Failed to exchange code for access token")
 			return
 		}
 
 		client := authConfig.Client(context.Background(), t)
 		resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "Failed to exchange code for access token")
+			writeError(w, r, http.StatusBadRequest, "Failed to exchange code for access token")
 			return
 		}
 		defer resp.Body.Close()
@@ -148,19 +149,13 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 		var v map[string]any
 		err = json.NewDecoder(resp.Body).Decode(&v)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to decode response body")
-			return
-		}
-
-		username, err := nanoid.New(10)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to generate username")
+			writeError(w, r, http.StatusInternalServerError, "Failed to decode response body")
 			return
 		}
 
 		email, ok := v["email"].(string)
 		if !ok {
-			writeError(w, http.StatusInternalServerError, "Email not found in OAuth response")
+			writeError(w, r, http.StatusInternalServerError, "Email not found in OAuth response")
 			return
 		}
 
@@ -170,7 +165,7 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 			// User exists, log them in
 			token, err := utils.GenerateJWT(user.ID)
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to generate token")
+				writeError(w, r, http.StatusInternalServerError, "Failed to generate token")
 				return
 			}
 			utils.SetAuthCookie(w, token)
@@ -180,35 +175,40 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 
 		// If error is not 'no user found', return error
 		if err != nil && err.Error() != "no user found" {
-			writeError(w, http.StatusInternalServerError, "Failed to check user existence")
+			writeError(w, r, http.StatusInternalServerError, "Failed to check user existence")
 			return
 		}
 
 		// User does not exist, create new user
+		username, err := createUsername(v["name"].(string))
+		if err != nil {
+			writeError(w, r, http.StatusInternalServerError, "Failed to create username")
+			return
+		}
+
 		user, err = (*h.userStore).CreateUser(&models.User{
 			Name:     v["name"].(string),
 			Email:    email,
-			Username: v["name"].(string) + "_" + username,
+			Username: username,
 		}, constants.AUTH_PROVIDER_GOOGLE)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to create user")
+			writeError(w, r, http.StatusInternalServerError, "Failed to create user")
 			return
 		}
 
 		token, err := utils.GenerateJWT(user.ID)
-		fmt.Println("token", token)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to generate token")
+			writeError(w, r, http.StatusInternalServerError, "Failed to generate token")
 			return
 		}
 
 		valid, err := utils.VerifyJWT(token)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to verify token")
+			writeError(w, r, http.StatusInternalServerError, "Failed to verify token")
 			return
 		}
 		if !valid {
-			writeError(w, http.StatusUnauthorized, "Invalid token")
+			writeError(w, r, http.StatusUnauthorized, "Invalid token")
 			return
 		}
 
@@ -219,6 +219,22 @@ func (h *AuthHandlers) OAuthCallbackHandler(authConfig *oauth2.Config) http.Hand
 
 func (h *AuthHandlers) Logout(w http.ResponseWriter, r *http.Request) {
 	utils.ClearAuthCookie(w)
-	fmt.Println("Cleared auth cookie")
-	writeJSON(w, http.StatusOK, map[string]string{"message": "Logout successful"})
+	writeJSON(w, r, http.StatusOK, map[string]string{"message": "Logout successful"})
+}
+
+func createUsername(name string) (string, error) {
+	username, err := nanoid.Generate("0123456789abcdefghijklmnopqrstuvwxyz", 10)
+	if err != nil {
+		return "", err
+	}
+	username = name + "_" + username
+	username = strings.ReplaceAll(username, " ", "_")
+	username = strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_' {
+			return r
+		}
+		return -1
+	}, username)
+	username = strings.ToLower(username)
+	return username, nil
 }

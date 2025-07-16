@@ -3,6 +3,7 @@ package stores
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/aimrintech/x-backend/models"
@@ -13,17 +14,19 @@ import (
 
 type TweetStore interface {
 	GetTweets(limit int, offset int) ([]*models.Tweet, error)
+
 	GetTweetByID(id string) (*models.Tweet, error)
-	CreateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error)
-	UpdateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error)
+	CreateTweet(tweet *models.Tweet, userID string) (*models.TweetProps, error)
+	UpdateTweet(tweet *models.Tweet, userID string) (*models.TweetProps, error)
 	DeleteTweet(tweetID string, userID string) error
 	LikeTweet(tweetID string, userID string) error
 	UnlikeTweet(tweetID string, userID string) error
 	Retweet(tweetID string, userID string) error
 	Unretweet(tweetID string, userID string) error
-	QuoteTweet(originalTweetID string, userID string, quotedTweet *models.Tweet) (*models.Tweet, error)
+	QuoteTweet(originalTweetID string, userID string, quotedTweet *models.Tweet) (*models.TweetProps, error)
 	BookmarkTweet(tweetID string, userID string) error
 	UnbookmarkTweet(tweetID string, userID string) error
+	GetUsersWithTweets(currUserID string, limit int, offset int) ([]models.TweetProps, error)
 	// ReplyToTweet(tweetID string, userID string, content string) (*models.Tweet, error)
 	// GetReplies(tweetID string, limit int, offset int) ([]*models.Tweet, error)
 }
@@ -32,13 +35,15 @@ type tweetStore struct {
 	driver               *neo4j.DriverWithContext
 	dbCtx                *context.Context
 	notificationsService services.Notifications
+	feedService          services.Feed
 }
 
-func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService services.Notifications) TweetStore {
+func NewTweetStore(driver *neo4j.DriverWithContext, dbCtx *context.Context, notificationsService services.Notifications, feedService services.Feed) TweetStore {
 	return &tweetStore{
 		driver:               driver,
 		dbCtx:                dbCtx,
 		notificationsService: notificationsService,
+		feedService:          feedService,
 	}
 }
 
@@ -87,7 +92,8 @@ func (s *tweetStore) GetTweetByID(id string) (*models.Tweet, error) {
 	return tweet, nil
 }
 
-func (s *tweetStore) CreateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error) {
+func (s *tweetStore) CreateTweet(tweet *models.Tweet, userID string) (*models.TweetProps, error) {
+	hashtags := extractHashtagsFromContent(*tweet.Content)
 	res, err := neo4j.ExecuteQuery(
 		*s.dbCtx,
 		*s.driver,
@@ -108,41 +114,75 @@ func (s *tweetStore) CreateTweet(tweet *models.Tweet, userID string) (*models.Tw
 			mediaURLs: $mediaURLs
 		})
 		MERGE (u)-[:TWEETS]->(t)
-		RETURN t
+		RETURN t, u
 		`,
-		map[string]any{"id": uuid.New().String(), "content": tweet.Content, "hashtags": tweet.Hashtags, "mediaURLs": tweet.MediaURLs, "userID": userID},
+		map[string]any{"id": uuid.New().String(), "content": tweet.Content, "hashtags": hashtags, "mediaURLs": tweet.MediaURLs, "userID": userID},
 		neo4j.EagerResultTransformer,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	tweet, err = extractTweetFromEagerResult(res)
-	if err != nil {
-		return nil, err
+	if len(res.Records) == 0 {
+		return nil, fmt.Errorf("no tweet created")
 	}
 
-	return tweet, nil
+	tweetNode, okT := res.Records[0].Get("t")
+	userNode, okU := res.Records[0].Get("u")
+	if !okT || !okU {
+		return nil, fmt.Errorf("failed to extract tweet or user node")
+	}
+
+	createdTweet := extractTweetFromNode(tweetNode)
+	user := extractUserFromNode(userNode)
+
+	// Convert to TweetProps using utility function
+	tweetProps := convertTweetToProps(createdTweet, user, false, false, false)
+
+	// Publish feed event for tweet creation (to author only for now)
+	if s.feedService != nil {
+		event := &models.FeedEvent{
+			Type:      models.FeedEventCreated,
+			Tweet:     *tweetProps,
+			ActorID:   userID,
+			CreatedAt: createdTweet.CreatedAt,
+		}
+		s.feedService.PublishToAll(event)
+	}
+	return tweetProps, nil
 }
 
-func (s *tweetStore) UpdateTweet(tweet *models.Tweet, userID string) (*models.Tweet, error) {
+func (s *tweetStore) UpdateTweet(tweet *models.Tweet, userID string) (*models.TweetProps, error) {
 	res, err := neo4j.ExecuteQuery(
 		*s.dbCtx,
 		*s.driver,
-		`MATCH (t:Tweet {id: $id}) SET t.content = $content, t.updatedAt = datetime() RETURN t`,
-		map[string]any{"id": tweet.ID, "content": tweet.Content},
+		`MATCH (u:User {id: $userID})-[:TWEETS]->(t:Tweet {id: $id}) 
+		SET t.content = $content, t.updatedAt = datetime() 
+		RETURN t, u`,
+		map[string]any{"id": tweet.ID, "content": tweet.Content, "userID": userID},
 		neo4j.EagerResultTransformer,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	tweet, err = extractTweetFromEagerResult(res)
-	if err != nil {
-		return nil, err
+	if len(res.Records) == 0 {
+		return nil, fmt.Errorf("no tweet found or user not authorized")
 	}
 
-	return tweet, nil
+	tweetNode, okT := res.Records[0].Get("t")
+	userNode, okU := res.Records[0].Get("u")
+	if !okT || !okU {
+		return nil, fmt.Errorf("failed to extract tweet or user node")
+	}
+
+	updatedTweet := extractTweetFromNode(tweetNode)
+	user := extractUserFromNode(userNode)
+
+	// Convert to TweetProps using utility function
+	tweetProps := convertTweetToProps(updatedTweet, user, false, false, false)
+
+	return tweetProps, nil
 }
 
 func (s *tweetStore) DeleteTweet(tweetID string, userID string) error {
@@ -176,8 +216,21 @@ func (s *tweetStore) LikeTweet(tweetID string, userID string) error {
 		return err
 	}
 
-	fmt.Println("like tweet", userID, tweetID)
 	s.notificationsService.Publish(models.NotificationTypeLike, models.NewNotification(userID, tweetID, nil, models.NotificationTypeLike))
+	// Publish feed event for like (to tweet author)
+	if s.feedService != nil {
+		tweetProps, err := s.getTweetPropsWithUser(tweetID, userID)
+		if err == nil && tweetProps != nil {
+			event := &models.FeedEvent{
+				Type:      models.FeedEventLiked,
+				Tweet:     *tweetProps,
+				ActorID:   userID,
+				CreatedAt: time.Now(),
+			}
+			// Send to tweet author
+			s.feedService.PublishToAll(event)
+		}
+	}
 
 	return nil
 }
@@ -215,6 +268,20 @@ func (s *tweetStore) Retweet(tweetID string, userID string) error {
 	}
 
 	s.notificationsService.Publish(models.NotificationTypeRetweet, models.NewNotification(userID, tweetID, nil, models.NotificationTypeRetweet))
+	// Publish feed event for retweet (to tweet author)
+	if s.feedService != nil {
+		tweetProps, err := s.getTweetPropsWithUser(tweetID, userID)
+		if err == nil && tweetProps != nil {
+			event := &models.FeedEvent{
+				Type:      models.FeedEventRetweeted,
+				Tweet:     *tweetProps,
+				ActorID:   userID,
+				CreatedAt: time.Now(),
+			}
+			// Send to tweet author
+			s.feedService.PublishToAll(event)
+		}
+	}
 
 	return nil
 }
@@ -237,7 +304,7 @@ func (s *tweetStore) Unretweet(tweetID string, userID string) error {
 	return nil
 }
 
-func (s *tweetStore) QuoteTweet(originalTweetID string, userID string, quotedTweet *models.Tweet) (*models.Tweet, error) {
+func (s *tweetStore) QuoteTweet(originalTweetID string, userID string, quotedTweet *models.Tweet) (*models.TweetProps, error) {
 	// create the new tweet (the quote tweet)
 	createdTweet, err := s.CreateTweet(quotedTweet, userID)
 	if err != nil {
@@ -299,6 +366,51 @@ func (s *tweetStore) UnbookmarkTweet(tweetID string, userID string) error {
 	return nil
 }
 
+func (s *tweetStore) GetUsersWithTweets(currUserID string, limit int, offset int) ([]models.TweetProps, error) {
+	query := `
+		MATCH (u:User)-[:TWEETS]->(t:Tweet)
+		OPTIONAL MATCH (curr:User {id: $currUserID})
+		OPTIONAL MATCH (curr)-[l:LIKES]->(t)
+		OPTIONAL MATCH (curr)-[r:RETWEETS]->(t)
+		OPTIONAL MATCH (curr)-[b:BOOKMARKS]->(t)
+		WITH u, t, l, r, b
+		ORDER BY t.createdAt DESC
+		SKIP $offset LIMIT $limit
+		RETURN u, t, l IS NOT NULL AS isLiked, r IS NOT NULL AS isRetweeted, b IS NOT NULL AS isBookmarked
+	`
+	res, err := neo4j.ExecuteQuery(
+		*s.dbCtx,
+		*s.driver,
+		query,
+		map[string]any{"currUserID": currUserID, "limit": limit, "offset": offset},
+		neo4j.EagerResultTransformer,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]models.TweetProps, 0, limit)
+
+	for _, record := range res.Records {
+		userNode, okU := record.Get("u")
+		tweetNode, okT := record.Get("t")
+		isLiked, _ := record.Get("isLiked")
+		isRetweeted, _ := record.Get("isRetweeted")
+		isBookmarked, _ := record.Get("isBookmarked")
+		if !okU || !okT {
+			continue
+		}
+		user := extractUserFromNode(userNode)
+		tweet := extractTweetFromNode(tweetNode)
+
+		// Use utility function to convert to TweetProps
+		tp := convertTweetToProps(tweet, user, isLiked.(bool), isRetweeted.(bool), isBookmarked.(bool))
+		result = append(result, *tp)
+	}
+
+	return result, nil
+}
+
 func extractTweetFromNode(tweetNode any) *models.Tweet {
 	props := tweetNode.(neo4j.Node).Props
 
@@ -333,6 +445,88 @@ func extractTweetFromNode(tweetNode any) *models.Tweet {
 	}
 }
 
+// convertTweetToProps converts a models.Tweet and models.User to models.TweetProps
+func convertTweetToProps(tweet *models.Tweet, user *models.User, isLiked, isRetweeted, isBookmarked bool) *models.TweetProps {
+	tweetProps := &models.TweetProps{
+		CreatedAt:     tweet.CreatedAt.Format(time.RFC3339),
+		RepliesCount:  tweet.RepliesCount,
+		MediaURLs:     []string{},
+		ID:            tweet.ID,
+		RetweetsCount: tweet.RetweetsCount,
+		ViewsCount:    tweet.ViewsCount,
+		Content:       "",
+		LikesCount:    tweet.LikesCount,
+		UpdatedAt:     tweet.UpdatedAt.Format(time.RFC3339),
+		Hashtags:      []string{},
+		Author: struct {
+			ID             string  `json:"id"`
+			IsVerified     *bool   `json:"isVerified"`
+			Username       string  `json:"username"`
+			ProfilePicture *string `json:"profilePicture"`
+			Name           *string `json:"name"`
+		}{
+			ID:             user.ID,
+			IsVerified:     &user.IsVerified,
+			Username:       user.Username,
+			ProfilePicture: user.ProfilePicture,
+			Name:           &user.Name,
+		},
+		IsLiked:      isLiked,
+		IsRetweeted:  isRetweeted,
+		IsBookmarked: isBookmarked,
+	}
+
+	if tweet.Content != nil {
+		tweetProps.Content = *tweet.Content
+	}
+	if tweet.Hashtags != nil {
+		tweetProps.Hashtags = *tweet.Hashtags
+	}
+	if tweet.MediaURLs != nil {
+		tweetProps.MediaURLs = *tweet.MediaURLs
+	}
+
+	return tweetProps
+}
+
+// getTweetPropsWithUser gets a tweet by ID and converts it to TweetProps by also fetching user information
+func (s *tweetStore) getTweetPropsWithUser(tweetID string, currentUserID string) (*models.TweetProps, error) {
+	res, err := neo4j.ExecuteQuery(
+		*s.dbCtx,
+		*s.driver,
+		`MATCH (u:User)-[:TWEETS]->(t:Tweet {id: $tweetID})
+		OPTIONAL MATCH (curr:User {id: $currentUserID})
+		OPTIONAL MATCH (curr)-[l:LIKES]->(t)
+		OPTIONAL MATCH (curr)-[r:RETWEETS]->(t)
+		OPTIONAL MATCH (curr)-[b:BOOKMARKS]->(t)
+		RETURN u, t, l IS NOT NULL AS isLiked, r IS NOT NULL AS isRetweeted, b IS NOT NULL AS isBookmarked`,
+		map[string]any{"tweetID": tweetID, "currentUserID": currentUserID},
+		neo4j.EagerResultTransformer,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res.Records) == 0 {
+		return nil, fmt.Errorf("tweet not found")
+	}
+
+	userNode, okU := res.Records[0].Get("u")
+	tweetNode, okT := res.Records[0].Get("t")
+	isLiked, _ := res.Records[0].Get("isLiked")
+	isRetweeted, _ := res.Records[0].Get("isRetweeted")
+	isBookmarked, _ := res.Records[0].Get("isBookmarked")
+
+	if !okU || !okT {
+		return nil, fmt.Errorf("failed to extract tweet or user node")
+	}
+
+	user := extractUserFromNode(userNode)
+	tweet := extractTweetFromNode(tweetNode)
+
+	return convertTweetToProps(tweet, user, isLiked.(bool), isRetweeted.(bool), isBookmarked.(bool)), nil
+}
+
 func extractTweetFromEagerResult(res *neo4j.EagerResult) (*models.Tweet, error) {
 	if len(res.Records) == 0 {
 		return nil, fmt.Errorf("no tweet found")
@@ -345,4 +539,16 @@ func extractTweetFromEagerResult(res *neo4j.EagerResult) (*models.Tweet, error) 
 	}
 
 	return extractTweetFromNode(tweet), nil
+}
+
+func extractHashtagsFromContent(content string) []string {
+	re := regexp.MustCompile(`#(\w+)`)
+	matches := re.FindAllString(content, -1)
+	return matches
+}
+
+func extractMentionsFromContent(content string) []string {
+	re := regexp.MustCompile(`@(\w+)`)
+	matches := re.FindAllString(content, -1)
+	return matches
 }

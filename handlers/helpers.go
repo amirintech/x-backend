@@ -6,16 +6,25 @@ import (
 	"net/http"
 
 	"github.com/aimrintech/x-backend/constants"
+	"github.com/aimrintech/x-backend/utils"
 )
 
-func writeJSON(w http.ResponseWriter, status int, data any) {
+func writeJSON(w http.ResponseWriter, r *http.Request, status int, data any) {
+	// Set CORS headers
+	utils.SetCORSHeaders(w, r)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
 }
 
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
+func writeError(w http.ResponseWriter, r *http.Request, status int, message string) {
+	// Set CORS headers
+	utils.SetCORSHeaders(w, r)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func readJSON(r *http.Request, v any) error {

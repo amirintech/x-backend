@@ -42,7 +42,8 @@ func setupTestTweetStore(t *testing.T) (TweetStore, *models.User, func()) {
 	}
 	ctx := context.Background()
 	notificationsService := services.NewNotificationsService()
-	store := NewTweetStore(&driver, &ctx, notificationsService)
+	feedService := services.NewFeedService()
+	store := NewTweetStore(&driver, &ctx, notificationsService, feedService)
 	userStore := NewUserStore(&driver, &ctx, notificationsService)
 	user := &models.User{
 		Name:     "Tweet User",
@@ -77,9 +78,9 @@ func TestTweetStore_CRUD(t *testing.T) {
 	created, err := store.CreateTweet(tweet, user.ID)
 	assert.NoError(t, err)
 	assert.NotNil(t, created)
-	assert.Equal(t, content, *created.Content)
-	assert.ElementsMatch(t, hashtags, *created.Hashtags)
-	assert.ElementsMatch(t, media, *created.MediaURLs)
+	assert.Equal(t, content, created.Content)
+	assert.ElementsMatch(t, hashtags, created.Hashtags)
+	assert.ElementsMatch(t, media, created.MediaURLs)
 
 	// Get by ID
 	fetched, err := store.GetTweetByID(created.ID)
@@ -90,11 +91,10 @@ func TestTweetStore_CRUD(t *testing.T) {
 
 	// Update
 	newContent := "Updated tweet content"
-	created.Content = &newContent
-	updated, err := store.UpdateTweet(created, user.ID)
+	updated, err := store.UpdateTweet(&models.Tweet{Content: &newContent}, user.ID)
 	assert.NoError(t, err)
 	if updated != nil {
-		assert.Equal(t, newContent, *updated.Content)
+		assert.Equal(t, newContent, updated.Content)
 	}
 
 	// Delete
@@ -184,7 +184,7 @@ func TestTweetStore_QuoteTweet(t *testing.T) {
 	quoted, err := store.QuoteTweet(created.ID, user.ID, quote)
 	assert.NoError(t, err)
 	assert.NotNil(t, quoted)
-	assert.Equal(t, quoteContent, *quoted.Content)
+	assert.Equal(t, quoteContent, quoted.Content)
 }
 
 func TestTweetStore_BookmarkUnbookmark(t *testing.T) {
